@@ -7,9 +7,10 @@ from Zai import LLM
 class LogicalNode:
 # The wise and steady LogicalNode, he cares not for graphics and pays his full attention to what's around him
     def __init__(self, parent=None):
-        self.user_input = None
+        self.user_input = ""
         self.llm_response = None
-        self.notes = None
+        self.note = ""
+        self.note_mode = False
         self.parent = parent
         self.children = set()
 
@@ -18,11 +19,15 @@ class LogicalNode:
         current_node = self
 
         while current_node:
-            messages.insert(0, {"role": "user", "content": current_node.user_input})
+            if self.note_mode == False:
+                input = "Question:" + current_node.user_input
+                messages.insert(0, {"role": "user", "content": input})
 
-            if current_node.llm_response:
-                messages.insert(0, {"role": "assistant", "content": current_node.llm_response})
-
+                if current_node.llm_response:
+                    messages.insert(0, {"role": "assistant", "content": current_node.llm_response})
+            else:
+                input = "Note:" + current_node.note
+                messages.insert(0, {"role": "user", "content": input})
             current_node = current_node.parent
 
         messages.insert(0, {
@@ -81,8 +86,19 @@ class GraphicalNode(QGraphicsObject):
         return super().itemChange(change, value)
 
     def get_response(self):
-        response = self.logical_node.get_response()
-        self.editor.add_response(response)
+        if self.logical_node.note_mode:
+            pass
+        else:
+            response = self.logical_node.get_response()
+            self.editor.add_response(response)
+
+    def change_mode(self):
+        if self.logical_node.note_mode:
+            logical_node = self.logical_node
+            self.editor.to_qa_mode(logical_node.user_input, logical_node.llm_response)
+        else:
+            self.editor.to_note_mode(self.logical_node.note)
+        self.logical_node.note_mode = not self.logical_node.note_mode
 
 class Editor(QPlainTextEdit):
     def __init__(self, node):
@@ -97,10 +113,37 @@ class Editor(QPlainTextEdit):
             }
         """)
         self.node = node
+        self.refresh()
         self.textChanged.connect(self.on_text_changed) #connects function to signal. when signal happens so does function
 
+    def refresh(self):
+        logical_node = self.node.logical_node
+        if logical_node.note:
+            self.setPlainText(logical_node.note)
+        elif logical_node.user_input:
+            text = logical_node.user_input
+            if logical_node.llm_response:
+                text = text + "\n\n Answer" + logical_node.llm_response
+            self.setPlainText(text)
+
     def on_text_changed(self):
-        self.node.logical_node.user_input = self.toPlainText()
+        if self.node.logical_node.note_mode:
+            self.node.logical_node.note = self.toPlainText()
+        else:
+            self.node.logical_node.user_input = self.toPlainText()
 
     def add_response(self, response):
+        self.blockSignals(True)
         self.setPlainText(self.toPlainText() + "\n\n Answer:" + response)
+        self.blockSignals(False)
+
+    def to_note_mode(self, note):
+        self.blockSignals(True)
+        self.setPlainText(note)
+        self.blockSignals(False)
+
+
+    def to_qa_mode(self, q, a):
+        self.blockSignals(True)
+        self.setPlainText(q + "\n\n Answer:" + a)
+        self.blockSignals(False)

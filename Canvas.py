@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Contains the PySide6 view and scene architechture
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsProxyWidget
+from PySide6.QtWidgets import QGraphicsScene, QGraphicsView, QGraphicsProxyWidget, QFileDialog
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QBrush, QColor, QFont, QKeyEvent
 from Node import LogicalNode, GraphicalNode
@@ -15,7 +15,7 @@ class Scene(QGraphicsScene):
 
     def update_scene_rect(self):
         rect = self.itemsBoundingRect()
-        padding = 500
+        padding = 2000
         self.setSceneRect(rect.adjusted(
             -padding, -padding,
             padding, padding
@@ -23,11 +23,46 @@ class Scene(QGraphicsScene):
 
     def add_node(self, logical_node):
         node = GraphicalNode(logical_node)
-        selected_node = self.selectedItems()[0]
-        node.setPos(selected_node.pos() + QPointF(0, selected_node.height) + QPointF(0, 150))  # Position below the parent node
+        parent_node = self.get_node(logical_node.parent)
+
+        horizontal_spacing = 80
+        vertical_spacing = 150
+
+        siblings = [
+            item for item in self.items()
+            if isinstance(item, GraphicalNode)
+            and item.logical_node.parent == logical_node.parent
+        ]
+
+        parent_x = parent_node.pos().x()
+        parent_y = parent_node.pos().y()
+
+        y = parent_y + parent_node.height + vertical_spacing
+
+        sibling_index = len(siblings)
+
+        if sibling_index == 0:
+            x = parent_x
+        else:
+            # 1, -1, 2, -2, 3, -3...
+            distance = (sibling_index + 1) // 2
+
+            if sibling_index % 2:
+                direction = 1
+            else:
+                direction = -1
+
+            x = parent_x + direction * distance * (
+                node.width + horizontal_spacing
+            )
+
+        node.setPos(QPointF(x, y))
+
         self.addItem(node)
-        arrow = Arrow(selected_node, node)
+
+        arrow = Arrow(parent_node, node)
         self.addItem(arrow)
+
         self.update_scene_rect()
 
     def remove_node(self):
@@ -50,10 +85,14 @@ class Scene(QGraphicsScene):
         self.removeItem(selected_node)
         self.update()
 
+    def change_mode(self):
+        selected_node = self.selectedItems()[0]
+        selected_node.change_mode()
+
+
     def get_response(self):
         selected_node = self.selectedItems()[0]
         selected_node.get_response()
-
 
     def get_node(self, logical_node):
         for item in self.items():
@@ -70,6 +109,7 @@ class View(QGraphicsView):
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.c = controller
         self.cmd = False
+        self.file_path = None
 
 
     def wheelEvent(self, event):
@@ -112,6 +152,21 @@ class View(QGraphicsView):
 
         if event.key() == Qt.Key_Return and self.cmd:
             self.scene().get_response()
+
+        if event.key() == Qt.Key_M and self.cmd:
+            self.scene().change_mode()
+
+        if event.key() == Qt.Key_S and self.cmd:
+            if not self.file_path:
+                self.file_path, _ = QFileDialog.getSaveFileName(self, "Save File As", "Trees", "JSON Files (*.json)")
+            if self.file_path:
+                self.c.save_file(self.file_path)
+
+        if event.key() == Qt.Key_O and self.cmd:
+            if not self.file_path:
+                self.file_path, _ = QFileDialog.getOpenFileName(self, "Choose File", "Trees", "JSON Files (*.json)")
+                if self.file_path:
+                    self.c.open_file(self.file_path)
 
 
     def keyReleaseEvent(self, event):
